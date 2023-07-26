@@ -133,12 +133,8 @@ def import_data(file_dict, subj, visit_num, site_code='SBH', load_raw=True):
     try:
         df_clin = read_excel_pwd(file_path=file_dict['clin_insights_file'], password="@handds2021")
 
-        # if 'new' in file_dict['clin_insights_file']:
-        #     df_clin = df_clin.iloc[4:, [0, 1, 3, 4, 5, 6, 7, 8, 12, 14, 18]]
         df_clin = df_clin.iloc[df_clin.loc[df_clin.iloc[:, 0] == 'Baseline Visit'].index[0]+1:, [0, 1, 3, 4, 5, 6, 7, 8, 12, 14, 18]]
         df_clin.reset_index(drop=True, inplace=True)
-        # if 'new' not in file_dict['clin_insights_file']:
-        #     df_clin = df_clin.iloc[5:, [0, 1, 3, 4, 5, 6, 7, 8, 12, 14, 18]]
         df_clin.columns = ['Date', "ID", "Sex", "Cohort", "Hand", "Locations", "Job_category",
                            "Employment", "Medical", "GaitAids", "Age"]
 
@@ -210,6 +206,46 @@ def import_data(file_dict, subj, visit_num, site_code='SBH', load_raw=True):
     except (FileNotFoundError, AttributeError, KeyError):
         pass
 
+    # Sync files
+    df_ankle_sync = pd.DataFrame(columns=['study_code', 'subject_id', 'coll_id', 'device_type', 'device_location',
+                                          'sync_id', 'start_time', 'end_time', 'ref_device_type',
+                                          'ref_device_location', 'ref_sig_idx', 'ref_sig_label', 'ref_start_idx',
+                                          'ref_end_idx', 'ref_flips', 'ref_ae', 'tgt_sig_idx', 'tgt_sig_label',
+                                          'tgt_start_idx', 'tgt_end_idx', 'tgt_corr'])
+
+    ankle_sync_file = file_dict['sync'] + os.path.basename(file_dict['ankle_file']).split(".")[0] + "_SYNC_EVENTS.csv"
+
+    try:
+        df_ankle_sync = pd.read_csv(ankle_sync_file)
+        df_ankle_sync = df_ankle_sync.loc[df_ankle_sync['ref_sig_label'] != 'Config']
+
+        df_ankle_sync['start_time'] = pd.to_datetime(df_ankle_sync['start_time'])
+        df_ankle_sync['end_time'] = pd.to_datetime(df_ankle_sync['end_time'])
+
+    except FileNotFoundError:
+        pass
+
+    df_chest_sync = pd.DataFrame(columns=['study_code', 'subject_id', 'coll_id', 'device_type', 'device_location',
+                                          'sync_id', 'start_time', 'end_time', 'ref_device_type',
+                                          'ref_device_location', 'ref_sig_idx', 'ref_sig_label', 'ref_start_idx',
+                                          'ref_end_idx', 'ref_flips', 'ref_ae', 'tgt_sig_idx', 'tgt_sig_label',
+                                          'tgt_start_idx', 'tgt_end_idx', 'tgt_corr'])
+
+    # yes, this is supposed to act on ankle_sync_file
+    chest_sync_file = ankle_sync_file.replace('AXV6_RAnkle', 'BF36_Chest') if 'RAnkle' in ankle_sync_file else \
+        ankle_sync_file.replace('AXV6LAnkle', 'BF36_Chest')
+
+    try:
+        df_chest_sync = pd.read_csv(chest_sync_file)
+        df_chest_sync = df_chest_sync.loc[df_chest_sync['ref_sig_label'] != 'Config']
+
+        df_chest_sync['start_time'] = pd.to_datetime(df_chest_sync['start_time'])
+        df_chest_sync['end_time'] = pd.to_datetime(df_chest_sync['end_time'])
+
+    except FileNotFoundError:
+        pass
+
+    # Raw data load
     if load_raw:
         print("\nImporting ankle data...")
         ankle = nimbalwear.Device()
@@ -251,7 +287,7 @@ def import_data(file_dict, subj, visit_num, site_code='SBH', load_raw=True):
     print("Data imported.")
 
     return df_epoch, epoch_len, df_clin, df_posture, df_act, df_sleep_alg, df_sleep, df_gait, df_steps, \
-           df_act_log, df_ankle_nw, df_wrist_nw, ankle, wrist
+           df_act_log, df_ankle_nw, df_wrist_nw, df_ankle_sync, df_chest_sync, ankle, wrist
 
 
 def read_excel_pwd(file_path, password, **kwargs):
@@ -268,13 +304,12 @@ def read_excel_pwd(file_path, password, **kwargs):
 
 
 def find_summary_df(subj, data_review_df_folder="W:/OND09 (HANDDS-ONT)/Data Review/"):
+
     folders = os.listdir(data_review_df_folder)
-    # folders = [i for i in folders if len(i) == 10]
 
     for folder in folders:
         try:
             files = os.listdir(data_review_df_folder + folder)
-            # files = [data_review_df_folder + folder + "/" + i for i in files if 'Summary Dataframes' in i]
             files = [data_review_df_folder + folder + "/" + i for i in files if 'OND09_summary' in i]
 
             for file in files:
@@ -333,12 +368,28 @@ def check_filenames(subj, file_dict, visit_num, site_code='SBH',
     """
 
     devices_csv = pd.read_csv(file_dict['devices'])
-    devices_csv = devices_csv.loc[devices_csv['subject_id'] == subj]
+    devices_csv_subj = devices_csv.loc[devices_csv['subject_id'] == subj]
 
-    wrist_file = file_dict['edf_folder'] + \
-                 devices_csv.loc[['Wrist' in i for i in devices_csv['device_location']]]['file_name'].iloc[0].split(".")[0] + ".edf"
-    ankle_file = file_dict['edf_folder'] + \
-                 devices_csv.loc[['Ankle' in i for i in devices_csv['device_location']]]['file_name'].iloc[0].split(".")[0] + ".edf"
+    try:
+        wrist_file = file_dict['edf_folder'] + \
+                     devices_csv_subj.loc[['Wrist' in i for i in devices_csv_subj['device_location']]]['file_name'].iloc[0].split(".")[0] + ".edf"
+        ankle_file = file_dict['edf_folder'] + \
+                     devices_csv_subj.loc[['Ankle' in i for i in devices_csv_subj['device_location']]]['file_name'].iloc[0].split(".")[0] + ".edf"
+    except IndexError:
+        pass
+
+    if devices_csv_subj.shape[0] == 0 and site_code in subj:
+        devices_csv_subj = devices_csv.loc[devices_csv['subject_id'] == subj.split(site_code)[1]]
+
+        wrist_file = file_dict['edf_folder'] + \
+                     devices_csv_subj.loc[['Wrist' in i for i in devices_csv_subj['device_location']]][
+                         'file_name'].iloc[0].split(".")[0] + ".edf"
+        ankle_file = file_dict['edf_folder'] + \
+                     devices_csv_subj.loc[['Ankle' in i for i in devices_csv_subj['device_location']]][
+                         'file_name'].iloc[0].split(".")[0] + ".edf"
+
+        wrist_file = wrist_file.split(subj.split(site_code)[1])[0] + subj + wrist_file.split(subj.split(site_code)[1])[1]
+        ankle_file = ankle_file.split(subj.split(site_code)[1])[0] + subj + ankle_file.split(subj.split(site_code)[1])[1]
 
     sleep_summary_file = find_summary_df(subj=subj, data_review_df_folder=data_review_df_folder)
 

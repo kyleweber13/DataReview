@@ -87,35 +87,39 @@ def summary_plot(df_daily, author, subj, df_sleep):
 
 def generate_scatter(df, x, y, label="", color='black', axes=None, grid=False):
 
-    reg = scipy.stats.linregress(x=df[x], y=df[y])
+    try:
+        reg = scipy.stats.linregress(x=df[x], y=df[y])
 
-    m = reg.slope
-    b = reg.intercept
-    r = scipy.stats.pearsonr(df[x], df[y])[0]
-    p = reg.pvalue
+        m = reg.slope
+        b = reg.intercept
+        r = scipy.stats.pearsonr(df[x], df[y])[0]
+        p = reg.pvalue
 
-    x_vals = np.linspace(df[x].min(), df[x].max(), 100)
-    y_vals = [i*m + b for i in x_vals]
+        x_vals = np.linspace(df[x].min(), df[x].max(), 100)
+        y_vals = [i*m + b for i in x_vals]
 
-    if axes is None:
-        fig, ax = plt.subplots(1, figsize=(8, 8))
-        ax.scatter(df[x], df[y], color=color)
-        ax.plot(x_vals, y_vals, color=color, label=f"{label} (r={round(r, 3)})")
-        ax.set_xlabel(x)
-        ax.set_ylabel(y)
-        ax.legend()
-        if grid:
-            ax.grid()
+        if axes is None:
+            fig, ax = plt.subplots(1, figsize=(8, 8))
+            ax.scatter(df[x], df[y], color=color)
+            ax.plot(x_vals, y_vals, color=color, label=f"{label} (r={round(r, 3)})")
+            ax.set_xlabel(x)
+            ax.set_ylabel(y)
+            ax.legend()
+            if grid:
+                ax.grid()
 
-    if axes is not None:
-        axes.scatter(df[x], df[y], color=color)
-        axes.plot(x_vals, y_vals, color=color, label=f"{label} (r={round(r, 3)})")
-        axes.set_xlabel(x)
-        axes.set_ylabel(y)
-        axes.legend()
+        if axes is not None:
+            axes.scatter(df[x], df[y], color=color)
+            axes.plot(x_vals, y_vals, color=color, label=f"{label} (r={round(r, 3)})")
+            axes.set_xlabel(x)
+            axes.set_ylabel(y)
+            axes.legend()
 
-        if grid:
-            axes.grid()
+            if grid:
+                axes.grid()
+
+    except ValueError:
+        pass
 
 
 def gen_relationship_graph(daily_df, df_gait, author):
@@ -163,59 +167,71 @@ def gen_relationship_graph(daily_df, df_gait, author):
 
 def compare_cutpoints(df_daily):
 
-    df = df_daily.iloc[:-1, ]
+    df = df_daily.copy()  # ignores
 
     fig, ax = plt.subplots(3, 4, sharex='col', figsize=(12, 8))
 
     # sedentary
     ax[0][0].bar(df['Date'], df['Sed_Powell'], color='grey', edgecolor='black')
+    ax[0][0].axhline(df['Sed_Powell'].mean(), color='grey', linestyle='dashed')
     ax[0][0].set_ylabel("Minutes")
     ax[0][0].set_title("Sedentary (Powell)")
     ax[0][0].set_ylim(0, max([df['Sed_Powell'].max(), df['Sed_Fraysse'].max()]) * 1.05)
 
     ax[1][0].bar(df['Date'], df['Sed_Fraysse'], color='grey', edgecolor='black')
+    ax[1][0].axhline(df['Sed_Fraysse'].mean(), color='grey', linestyle='dashed')
     ax[1][0].set_title("Sedentary (Fraysse)")
     ax[1][0].set_ylabel("Minutes")
     ax[1][0].set_ylim(0, max([df['Sed_Powell'].max(), df['Sed_Fraysse'].max()]) * 1.05)
 
     ax[2][0].bar(df['Date'], df['Sed_Fraysse'] / df['Sed_Powell'], color='grey', edgecolor='black')
+    ax[2][0].axhline((df['Sed_Fraysse'] / df['Sed_Powell']).mean(), color='grey', linestyle='dashed')
     ax[2][0].set_title("Fraysse:Powell ratio")
     ax[2][0].set_ylabel("Ratio")
 
     # light
     ax[0][1].bar(df['Date'], df['Light_Powell'], color='green', edgecolor='black')
+    ax[0][1].axhline(df['Light_Powell'].mean(), color='green', linestyle='dashed')
     ax[0][1].set_title("Light (Powell)")
     ax[0][1].set_ylim(0, max([df['Light_Powell'].max(), df['Light_Fraysse'].max()]) * 1.05)
 
     ax[1][1].bar(df['Date'], df['Light_Fraysse'], color='green', edgecolor='black')
+    ax[1][1].axhline(df['Light_Fraysse'].mean(), color='green', linestyle='dashed')
     ax[1][1].set_title("Light (Fraysse)")
     ax[1][1].set_ylim(0, max([df['Light_Powell'].max(), df['Light_Fraysse'].max()]) * 1.05)
 
     ax[2][1].bar(df['Date'], df['Light_Fraysse'] / df['Light_Powell'], color='green', edgecolor='black')
+    ax[2][1].axhline((df['Light_Fraysse'] / df['Light_Powell']).mean(), color='green', linestyle='dashed')
     ax[2][1].set_title("Fraysse:Powell ratio")
 
     # mvpa
     ax[0][2].bar(df['Date'], df['MVPA_Powell'], color='orange', edgecolor='black')
+    ax[0][2].axhline(df['MVPA_Powell'].mean(), color='orange', linestyle='dashed')
     ax[0][2].set_title("MVPA (Powell)")
     ax[0][2].set_ylim(0, max([df['MVPA_Powell'].max(), df['MVPA_Fraysse'].max()]) * 1.05)
 
     ax[1][2].bar(df['Date'], df['MVPA_Fraysse'], color='orange', edgecolor='black')
+    ax[1][2].axhline(df['MVPA_Fraysse'].mean(), color='orange', linestyle='dashed')
     ax[1][2].set_title("MVPA (Fraysse)")
     ax[1][2].set_ylim(0, max([df['MVPA_Powell'].max(), df['MVPA_Fraysse'].max()]) * 1.05)
 
     ax[2][2].bar(df['Date'], df['MVPA_Fraysse'] / df['MVPA_Powell'], color='orange', edgecolor='black')
+    ax[2][2].axhline((df['MVPA_Fraysse'] / df['MVPA_Powell']).mean(), color='orange', linestyle='dashed')
     ax[2][2].set_title("Fraysse:Powell ratio")
 
     # light + mvpa
     ax[0][3].bar(df['Date'], df['Active_Powell'], color='dodgerblue', edgecolor='black')
+    ax[0][3].axhline(df['Active_Powell'].mean(), color='dodgerblue', linestyle='dashed')
     ax[0][3].set_title("Active (Powell)")
     ax[0][3].set_ylim(0, max([df['Active_Powell'].max(), df['Active_Fraysse'].max()]) * 1.05)
 
     ax[1][3].bar(df['Date'], df['Active_Fraysse'], color='dodgerblue', edgecolor='black')
+    ax[1][3].axhline(df['Active_Fraysse'].mean(), color='dodgerblue', linestyle='dashed')
     ax[1][3].set_title("Active (Fraysse)")
     ax[1][3].set_ylim(0, max([df['Active_Powell'].max(), df['Active_Fraysse'].max()]) * 1.05)
 
     ax[2][3].bar(df['Date'], df['Active_Fraysse'] / df['Active_Powell'], color='dodgerblue', edgecolor='black')
+    ax[2][3].axhline((df['Active_Fraysse'] / df['Active_Powell']).mean(), color='dodgerblue', linestyle='dashed')
     ax[2][3].set_title("Fraysse:Powell ratio")
 
     for i in range(4):
@@ -227,6 +243,7 @@ def compare_cutpoints(df_daily):
 
 def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), alpha=.5,
              df_hr=None, df_posture=None, df_epoch=None, df_sleep_alg=None, df_steps=None, df_gait=None, df_act_log=None,
+             df_ankle_sync=None, df_chest_sync=None,
              ankle_gyro=True, intensity_markers=False,
              shade_gait_bouts=False, min_gait_dur=15, mark_steps=False, bout_steps_only=True,
              wrist_gyro=False, highpass_accel=True,
@@ -295,7 +312,6 @@ def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), 
                    'temp': ecg.ecg.get_signal_index("Temperature")}
 
     """ --------- Plot set-up --------"""
-    # n_subplots = 7 - sum([int(i is None) for i in [df_epoch, ecg, wrist, ankle, df_hr, df_posture]])
     n_subplots = sum([int(i is not None) for i in [df_epoch, ecg, wrist, ankle, df_hr, df_posture]])
 
     if wrist is not None or ankle is not None:  # for temperature data
@@ -487,6 +503,15 @@ def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), 
 
             already_ankle_nw = True
 
+        if df_ankle_sync is not None:
+            for row in df_ankle_sync.itertuples():
+                ax[curr_plot].axvspan(row.start_time, row.end_time, 0, 1, color='fuchsia', alpha=alpha)
+
+                if row.Index != df_ankle_sync.index[0]:
+                    ax[curr_plot].axvline(row.start_time, color='fuchsia', linestyle='dashed', lw=1.5)
+                if row.Index == df_ankle_sync.index[0]:
+                    ax[curr_plot].axvline(row.start_time, color='fuchsia', linestyle='dashed', lw=1.5, label='sync')
+
         if mark_steps and df_steps is not None:
 
             if bout_steps_only and df_gait is not None:
@@ -552,6 +577,13 @@ def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), 
         ax[curr_plot].legend(loc='lower right')
         ax[curr_plot].set_ylabel("Voltage")
         curr_plot += 1
+
+    if df_chest_sync is not None:
+        for row in df_chest_sync.itertuples():
+            if row.Index != df_chest_sync.index[0]:
+                ax[curr_plot].axvline(row.start_time, color='fuchsia', linestyle='dashed', lw=3)
+            if row.Index == df_chest_sync.index[0]:
+                ax[curr_plot].axvline(row.start_time, color='fuchsia', linestyle='dashed', lw=3, label='sync')
 
     if df_hr is not None:
         ax[curr_plot].plot(df_hr['timestamp'], df_hr['hr'], color='red')

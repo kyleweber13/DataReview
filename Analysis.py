@@ -1,5 +1,5 @@
 import pandas as pd
-from datetime import timedelta
+import datetime
 import numpy as np
 from scipy.signal import butter, filtfilt, iirnotch
 import Run_FFT
@@ -72,7 +72,7 @@ def calculate_daily_activity(df_epoch, cutpoints_dict,
                              side="Non-dominant", author='Powell', ignore_sleep=True, ignore_nw=True):
 
     days = sorted([i for i in set([i.date() for i in df_epoch['Timestamp']])])
-    days = pd.date_range(start=days[0], end=days[-1] + timedelta(days=1), freq='1D')
+    days = pd.date_range(start=days[0], end=days[-1] + datetime.timedelta(days=1), freq='1D')
 
     if ignore_sleep:
         df_epoch = df_epoch.loc[df_epoch['sleep_mask'] == 0]
@@ -152,27 +152,35 @@ def calculate_hand_dom(df_clin, wrist_file):
 
 
 def calculate_hand_dom2(subj,
-                        subjs_csv_file="W:/NiMBaLWEAR/OND09/pipeline/subjects.csv",
+                        site_code='SBH',
+                        colls_csv_file="W:/NiMBaLWEAR/OND09/pipeline/collections.csv",
                         devices_csv_file="W:/NiMBaLWEAR/OND09/pipeline/devices.csv"):
 
-    subjs_csv = pd.read_csv(subjs_csv_file)
-    subjs_csv = subjs_csv.loc[subjs_csv['subject_id'] == subj]
+    colls_csv = pd.read_csv(colls_csv_file)
+    colls_csv_subj = colls_csv.loc[colls_csv['subject_id'] == subj]
+
+    if colls_csv_subj.shape[0] == 0:
+        colls_csv_subj = colls_csv.loc[colls_csv['subject_id'] == subj.split(site_code)[1]]
 
     devices_csv = pd.read_csv(devices_csv_file)
-    devices_csv = devices_csv.loc[devices_csv['subject_id'] == subj]
+    devices_csv_subj = devices_csv.loc[devices_csv['subject_id'] == subj]
 
-    dom_hand = subjs_csv['dominant_hand'].iloc[0][0]
+    if devices_csv_subj.shape[0] == 0:
+        devices_csv_subj = devices_csv.loc[devices_csv['subject_id'] == subj.split(site_code)[1]]
 
-    dom_wrist_file = devices_csv.loc[devices_csv['device_location'] == f"{dom_hand}Wrist"]['file_name']
+    dom_hand = colls_csv_subj['dominant_hand'].iloc[0][0]
+
+    dom_wrist_file = devices_csv_subj.loc[devices_csv_subj['device_location'] == f"{dom_hand}Wrist"]['file_name']
 
     if len(dom_wrist_file) == 0:
         hand_dom = False
-        dom_wrist_file = devices_csv.loc[devices_csv['device_location'] == "LWrist"].iloc[0]['file_name'] if dom_hand == 'R' else devices_csv.loc[devices_csv['device_location'] == "RWrist"].iloc[0]['file_name']
+        dom_wrist_file = devices_csv.loc[devices_csv['device_location'] == "LWrist"].iloc[0]['file_name'] if \
+            dom_hand == 'R' else devices_csv.loc[devices_csv['device_location'] == "RWrist"].iloc[0]['file_name']
 
     if len(dom_wrist_file) == 1:
         hand_dom = True
 
-    return hand_dom
+    return hand_dom, colls_csv_subj
 
 
 def print_medical_summary(df_clin):
@@ -305,14 +313,14 @@ def calculated_logged_intensity(df_act_log, df_epoch, df_steps=None, epoch_len=1
     for row in df_act_log.itertuples():
 
         try:
-            epoch = df_epoch.loc[(df_epoch['Timestamp'] >= row.start_time + timedelta(hours=hours_offset)) &
+            epoch = df_epoch.loc[(df_epoch['Timestamp'] >= row.start_time + datetime.timedelta(hours=hours_offset)) &
                                  (df_epoch["Timestamp"] <= row.start_time +
-                                  timedelta(hours=hours_offset) + timedelta(seconds=row.duration * 60))]
+                                  datetime.timedelta(hours=hours_offset) + datetime.timedelta(seconds=row.duration * 60))]
 
             if df_steps is not None:
-                steps = df_steps.loc[(df_steps['step_time'] >= row.start_time + timedelta(hours=hours_offset)) &
-                                     (df_steps["step_time"] <= row.start_time +\
-                                      timedelta(hours=hours_offset) + timedelta(seconds=row.duration * 60))]
+                steps = df_steps.loc[(df_steps['step_time'] >= row.start_time + datetime.timedelta(hours=hours_offset)) &
+                                     (df_steps["step_time"] <= row.start_time +
+                                      datetime.timedelta(hours=hours_offset) + datetime.timedelta(seconds=row.duration * 60))]
                 step_count.append(steps.shape[0] * 2)
 
             if df_steps is None:
@@ -526,6 +534,7 @@ def print_walking_intensity_summary(df_gait, df_epoch, cutpoints=(62.5, 92.5), m
 
     if n == 0:
         print("-Not enough gait bouts found.")
+        return 0
 
     return f"{avg:.0f} +- {sd:.0f}"
 
@@ -544,21 +553,29 @@ def check_intensity_window(df_epoch, start, end):
 
 def calculate_window_cadence(start, stop, df_steps, ankle_obj=None, show_plot=False, axis='Gyroscope z'):
 
+    if isinstance(stop, datetime.timedelta):
+        stop = pd.to_datetime(start) + stop
+
     df = df_steps.loc[(df_steps['step_time'] >= pd.to_datetime(start)) &
                       (df_steps['step_time'] < pd.to_datetime(stop))].reset_index(drop=True)
 
     n_steps = df.shape[0]
-    dt = (df['step_time'].iloc[-1] - df['step_time'].iloc[0]).total_seconds()
 
-    mean_cad = 2 * n_steps / dt * 60
-    print(f"\nMean cadence between {start} and {stop} is {mean_cad:.1f} spm")
-    print(f"-{n_steps*2:.0f} steps in {dt:.0f} seconds/{dt/60:.1f} minutes")
+    if n_steps >= 2:
+        dt = (df['step_time'].iloc[-1] - df['step_time'].iloc[0]).total_seconds()
+
+        mean_cad = 2 * n_steps / dt * 60
+        print(f"\nMean cadence between {start} and {stop} is {mean_cad:.1f} spm")
+        print(f"-{n_steps*2:.0f} steps in {dt:.0f} seconds/{dt/60:.1f} minutes")
+
+    if n_steps < 2:
+        print("\nNot enough steps to do anything.")
 
     if show_plot:
-
+        start_key = 'startdate' if 'startdate' in ankle_obj.header.keys() else 'start_datetime'
         fig, ax = plt.subplots(1, figsize=(12, 5))
-        start_idx = int((pd.to_datetime(start) - ankle_obj.header['startdate']).total_seconds() * ankle_obj.signal_headers[0]['sample_rate'])
-        stop_idx = int((pd.to_datetime(stop) - ankle_obj.header['startdate']).total_seconds() * ankle_obj.signal_headers[0]['sample_rate'])
+        start_idx = int((pd.to_datetime(start) - ankle_obj.header[start_key]).total_seconds() * ankle_obj.signal_headers[0]['sample_rate'])
+        stop_idx = int((pd.to_datetime(stop) - ankle_obj.header[start_key]).total_seconds() * ankle_obj.signal_headers[0]['sample_rate'])
 
         ax.plot(ankle_obj.ts[start_idx:stop_idx], ankle_obj.signals[ankle_obj.get_signal_index(axis)][start_idx:stop_idx], color='black', zorder=0)
 
@@ -574,7 +591,7 @@ def epoch_cadence(epoch_timestamps, df_steps):
     print(f"\nCalculating average cadence in {epoch_len}-second windows...")
     for stamp in tqdm(epoch_timestamps):
         df = df_steps.loc[(df_steps['step_time'] >= stamp) &
-                          (df_steps['step_time'] < stamp + timedelta(seconds=epoch_len))]
+                          (df_steps['step_time'] < stamp + datetime.timedelta(seconds=epoch_len))]
         n_steps = df.shape[0]
 
         cad = n_steps / epoch_len * 60 * 2
@@ -591,7 +608,7 @@ def adjust_timestamps(df, n_seconds=0, colnames=()):
         col = []
         for i in df[column]:
             try:
-                col.append(i + timedelta(seconds=n_seconds))
+                col.append(i + datetime.timedelta(seconds=n_seconds))
             except:
                 col.append(i)
         #df[column] = pd.to_datetime(df[column])
