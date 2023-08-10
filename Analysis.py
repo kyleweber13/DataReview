@@ -71,7 +71,9 @@ def calculate_daily_activity(df_epoch, cutpoints_dict,
                              epoch_len=15, column='avm',
                              side="Non-dominant", author='Powell', ignore_sleep=True, ignore_nw=True):
 
-    days = sorted([i for i in set([i.date() for i in df_epoch['Timestamp']])])
+    time_key = 'Timestamp' if 'Timestamp' in df_epoch.columns else 'start_time'
+
+    days = sorted([i for i in set([i.date() for i in df_epoch[time_key]])])
     days = pd.date_range(start=days[0], end=days[-1] + datetime.timedelta(days=1), freq='1D')
 
     if ignore_sleep:
@@ -310,11 +312,12 @@ def calculated_logged_intensity(df_act_log, df_epoch, df_steps=None, epoch_len=1
     if not quiet:
         print("\nMeasured intensities of logged events:")
 
+    epoch_key = 'Timestamp' if 'Timestamp' in df_epoch.columns else 'start_time'
     for row in df_act_log.itertuples():
 
         try:
-            epoch = df_epoch.loc[(df_epoch['Timestamp'] >= row.start_time + datetime.timedelta(hours=hours_offset)) &
-                                 (df_epoch["Timestamp"] <= row.start_time +
+            epoch = df_epoch.loc[(df_epoch[epoch_key] >= row.start_time + datetime.timedelta(hours=hours_offset)) &
+                                 (df_epoch[epoch_key] <= row.start_time +
                                   datetime.timedelta(hours=hours_offset) + datetime.timedelta(seconds=row.duration * 60))]
 
             if df_steps is not None:
@@ -459,10 +462,12 @@ def freq_analysis(obj, ts, subj="", sample_rate=None, channel="", lowpass=None, 
 
 def flag_sleep_epochs(df_epoch, df_sleep_alg):
 
+    time_key = 'Timestamp' if 'Timestamp' in df_epoch.columns else 'start_time'
+
     sleep_mask = np.zeros(df_epoch.shape[0])
 
-    start_time = df_epoch.iloc[0]['Timestamp']
-    epoch_len = (df_epoch.iloc[1]['Timestamp'] - start_time).total_seconds()
+    start_time = df_epoch.iloc[0][time_key]
+    epoch_len = (df_epoch.iloc[1][time_key] - start_time).total_seconds()
 
     for row in df_sleep_alg.itertuples():
         start_i = int(np.floor((row.start_time - start_time).total_seconds() / epoch_len))
@@ -475,10 +480,12 @@ def flag_sleep_epochs(df_epoch, df_sleep_alg):
 
 def flag_nonwear_epochs(df_epoch, df_nw):
 
+    time_key = 'Timestamp' if 'Timestamp' in df_epoch.columns else 'start_time'
+
     nw_mask = np.zeros(df_epoch.shape[0])
 
-    start_time = df_epoch.iloc[0]['Timestamp']
-    epoch_len = (df_epoch.iloc[1]['Timestamp'] - start_time).total_seconds()
+    start_time = df_epoch.iloc[0][time_key]
+    epoch_len = (df_epoch.iloc[1][time_key] - start_time).total_seconds()
 
     for row in df_nw.itertuples():
         start_i = int(np.floor((row.start_time - start_time).total_seconds() / epoch_len))
@@ -491,10 +498,12 @@ def flag_nonwear_epochs(df_epoch, df_nw):
 
 def print_walking_intensity_summary(df_gait, df_epoch, cutpoints=(62.5, 92.5), min_dur=30):
 
+    time_key = 'Timestamp' if 'Timestamp' in df_epoch.columns else 'start_time'
+
     df = df_gait.loc[df_gait['duration'] >= min_dur]
     n = df.shape[0]
     dur = df['duration'].sum()/60
-    epoch_len = (df_epoch.iloc[1]['Timestamp'] - df_epoch.iloc[0]['Timestamp']).total_seconds()
+    epoch_len = (df_epoch.iloc[1][time_key] - df_epoch.iloc[0][time_key]).total_seconds()
     print("\n====== WRIST INTENSITY DURING WALKING BOUTS =======")
 
     if n >= 1:
@@ -504,8 +513,8 @@ def print_walking_intensity_summary(df_gait, df_epoch, cutpoints=(62.5, 92.5), m
         sed = 0
         for bout in df.itertuples():
 
-            df_e = df_epoch.loc[(df_epoch['Timestamp'] >= bout.start_timestamp) &
-                                (df_epoch['Timestamp'] < bout.end_timestamp)]
+            df_e = df_epoch.loc[(df_epoch[time_key] >= bout.start_timestamp) &
+                                (df_epoch[time_key] < bout.end_timestamp)]
 
             mvpa += list(df_e['intensity']).count('moderate') * epoch_len / 60
             light += list(df_e['intensity']).count('light') * epoch_len / 60
@@ -542,9 +551,10 @@ def print_walking_intensity_summary(df_gait, df_epoch, cutpoints=(62.5, 92.5), m
 def check_intensity_window(df_epoch, start, end):
 
     print(f"\nActivity intensity summary from {start} to {end}:")
+    time_key = 'Timestamp' if 'Timestamp' in df_epoch.columns else 'start_time'
 
-    epoch_len = (df_epoch.iloc[1]['Timestamp'] - df_epoch.iloc[0]['Timestamp']).total_seconds()
-    d = df_epoch.loc[(df_epoch['Timestamp'] >= start) & (df_epoch['Timestamp'] <= end)]
+    epoch_len = (df_epoch.iloc[1][time_key] - df_epoch.iloc[0][time_key]).total_seconds()
+    d = df_epoch.loc[(df_epoch[time_key] >= start) & (df_epoch[time_key] <= end)]
     vals = d['intensity'].value_counts() / (60 / epoch_len)
 
     for i in vals.index:

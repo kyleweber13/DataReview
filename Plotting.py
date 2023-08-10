@@ -241,8 +241,9 @@ def compare_cutpoints(df_daily):
     plt.tight_layout()
 
 
-def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), alpha=.5,
-             df_hr=None, df_posture=None, df_epoch=None, df_sleep_alg=None, df_steps=None, df_gait=None, df_act_log=None,
+def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", study_code='OND09', cutpoints=(), alpha=.5,
+             df_hr=None, df_posture=None, df_epoch=None, df_sleep=None, df_sptw=None,
+             df_steps=None, df_gait=None, df_act_log=None,
              df_ankle_sync=None, df_chest_sync=None,
              ankle_gyro=True, intensity_markers=False,
              shade_gait_bouts=False, min_gait_dur=15, mark_steps=False, bout_steps_only=True,
@@ -324,7 +325,7 @@ def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), 
 
     fig, ax = plt.subplots(n_subplots, 1, sharex='col', figsize=(12, 8), gridspec_kw={'height_ratios': gs})
 
-    plt.suptitle(f"OND09_{subj}")
+    plt.suptitle(f"{study_code}_{subj}")
 
     curr_plot = 0
 
@@ -332,9 +333,9 @@ def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), 
     already_ankle_nw = False
 
     """------- Plots activity counts with cutpoints --------"""
-    if df_epoch is not None:
-        epoch_len = int((df_epoch.iloc[1]['Timestamp'] - df_epoch.iloc[0]['Timestamp']).total_seconds())
-        ax[curr_plot].plot(df_epoch['Timestamp'], df_epoch['avm'], color='black', label=f'{epoch_len}s wrist', zorder=0)
+    if df_epoch is not None and df_epoch.shape[0] >= 2:
+        epoch_len = int((df_epoch.iloc[1]['start_time'] - df_epoch.iloc[0]['start_time']).total_seconds())
+        ax[curr_plot].plot(df_epoch['start_time'], df_epoch['avm'], color='black', label=f'{epoch_len}s wrist', zorder=0)
         ax[curr_plot].set_ylabel("Wrist AVM (mG)")
         ax[curr_plot].axhline(0, color='grey', linestyle='dashed')
 
@@ -346,6 +347,33 @@ def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), 
                                           color='grey', label='Nonwear')
                 ax[curr_plot].axvspan(xmin=row.start_time, xmax=row.end_time, alpha=alpha, linewidth=0,
                                       color='grey')
+
+            if wrist is None:
+                if df_sptw is not None and shade_sleep_windows:
+
+                    for row in df_sptw.itertuples():
+                        if row.Index == 0:
+                            ax[curr_plot].axvspan(xmin=row.start_time, xmax=row.end_time, alpha=alpha, linewidth=0,
+                                                  color='orchid', label='sptw')
+                        # if row.Index != 0:
+                        ax[curr_plot].axvspan(xmin=row.start_time, xmax=row.end_time,
+                                              alpha=alpha if row.Index > 1 else 0, linewidth=0,
+                                              color='orchid')
+
+                if df_sleep is not None and shade_sleep_windows:
+
+                    for row in df_sleep.itertuples():
+                        if row.Index == 0:
+                            ax[curr_plot].axvspan(xmin=row.start_time, xmax=row.end_time, alpha=alpha, linewidth=0,
+                                                  color='purple', label='sleep')
+                        # if row.Index != 0:
+                        ax[curr_plot].axvspan(xmin=row.start_time, xmax=row.end_time,
+                                              alpha=alpha if row.Index > 1 else 0, linewidth=0,
+                                              color='purple')
+
+                if (df_sptw is not None and shade_sleep_windows) or (
+                        df_sleep is not None and shade_sleep_windows) or wrist_nw is not None:
+                    ax[curr_plot].legend(loc='upper right')
 
             already_wrist_nw = True
 
@@ -363,8 +391,8 @@ def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), 
             c = {'yes': 'lightskyblue', 'no': 'pink', 'unknown': 'darkorchid'}
             for row in df_act_log.itertuples():
                 try:
-                    df_activity = df_epoch.loc[(df_epoch['Timestamp'] >= row.start_time) &
-                                               (df_epoch['Timestamp'] <= row.start_time + timedelta(minutes=row.duration))]
+                    df_activity = df_epoch.loc[(df_epoch['start_time'] >= row.start_time) &
+                                               (df_epoch['start_time'] <= row.start_time + timedelta(minutes=row.duration))]
                     max_val = df_activity['avm'].max()
 
                     ax[curr_plot].axvspan(xmin=row.start_time, xmax=row.start_time + timedelta(minutes=row.duration),
@@ -390,8 +418,8 @@ def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), 
             df_light = df_epoch.loc[df_epoch['intensity'] == 'light']
             df_mod = df_epoch.loc[df_epoch['intensity'] == 'moderate']
 
-            ax[curr_plot].scatter(df_light['Timestamp'], df_light['avm'], color='limegreen', s=15, label='light', zorder=1)
-            ax[curr_plot].scatter(df_mod['Timestamp'], df_mod['avm'], color='orange', s=15, label='mod', zorder=1)
+            ax[curr_plot].scatter(df_light['start_time'], df_light['avm'], color='limegreen', s=15, label='light', zorder=1)
+            ax[curr_plot].scatter(df_mod['start_time'], df_mod['avm'], color='orange', s=15, label='mod', zorder=1)
 
         ax[curr_plot].legend(loc='lower right')
 
@@ -434,17 +462,27 @@ def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), 
                 ax[curr_plot].axvspan(xmin=row.start_time, xmax=row.end_time, alpha=alpha, linewidth=0,
                                       color='grey')
 
-        if df_sleep_alg is not None and shade_sleep_windows:
+        if df_sptw is not None and shade_sleep_windows:
 
-            for row in df_sleep_alg.itertuples():
+            for row in df_sptw.itertuples():
                 if row.Index == 0:
                     ax[curr_plot].axvspan(xmin=row.start_time, xmax=row.end_time, alpha=alpha, linewidth=0,
-                                          color='purple', label='Sleep')
+                                          color='orchid', label='sptw')
+                # if row.Index != 0:
+                ax[curr_plot].axvspan(xmin=row.start_time, xmax=row.end_time, alpha=alpha if row.Index > 1 else 0, linewidth=0,
+                                      color='orchid')
+
+        if df_sleep is not None and shade_sleep_windows:
+
+            for row in df_sleep.itertuples():
+                if row.Index == 0:
+                    ax[curr_plot].axvspan(xmin=row.start_time, xmax=row.end_time, alpha=alpha, linewidth=0,
+                                          color='purple', label='sleep')
                 # if row.Index != 0:
                 ax[curr_plot].axvspan(xmin=row.start_time, xmax=row.end_time, alpha=alpha if row.Index > 1 else 0, linewidth=0,
                                       color='purple')
 
-        if (df_sleep_alg is not None and shade_sleep_windows) or wrist_nw is not None:
+        if (df_sptw is not None and shade_sleep_windows) or (df_sleep is not None and shade_sleep_windows) or wrist_nw is not None:
             ax[curr_plot].legend(loc='upper right')
 
         ax[curr_plot].legend(loc='lower right')
@@ -457,12 +495,12 @@ def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), 
         ankle_prefix = "a" if not ankle_gyro else 'g'
 
         if not highpass_accel:
-            ax[curr_plot].plot(ankle.ts[::ds_ratio], ankle.signals[wrist_idx[f'{ankle_prefix}x']][::ds_ratio],
+            ax[curr_plot].plot(ankle.ts[::ds_ratio], ankle.signals[ankle_idx[f'{ankle_prefix}x']][::ds_ratio],
                                color='black',
                                label="{}Hz ankle".format(round(ankle.signal_headers[0]['sample_rate']/ds_ratio, 1)))
-            ax[curr_plot].plot(ankle.ts[::ds_ratio], ankle.signals[wrist_idx[f'{ankle_prefix}y']][::ds_ratio],
+            ax[curr_plot].plot(ankle.ts[::ds_ratio], ankle.signals[ankle_idx[f'{ankle_prefix}y']][::ds_ratio],
                                color='red')
-            ax[curr_plot].plot(ankle.ts[::ds_ratio], ankle.signals[wrist_idx[f'{ankle_prefix}z']][::ds_ratio],
+            ax[curr_plot].plot(ankle.ts[::ds_ratio], ankle.signals[ankle_idx[f'{ankle_prefix}z']][::ds_ratio],
                                color='dodgerblue')
 
         if highpass_accel:
@@ -543,7 +581,7 @@ def plot_raw(ds_ratio=1, dominant=True, author='Powell', subj="", cutpoints=(), 
         curr_plot += 1
 
     if 'cadence' in df_epoch.columns:
-        ax[curr_plot].plot(df_epoch['Timestamp'], df_epoch['cadence'], color='black')
+        ax[curr_plot].plot(df_epoch['start_time'], df_epoch['cadence'], color='black')
         ax[curr_plot].set_ylabel("Epoched Cadence")
 
         if not already_ankle_nw:
@@ -617,11 +655,11 @@ def plot_activity(df_epoch, df_sleep, ankle_nw, wrist_nw):
 
     intensity_dict = {"sedentary": 0, 'light': 1, 'moderate': 2}
 
-    ax[0].plot(df_epoch['Timestamp'], df_epoch['avm'], color='black')
+    ax[0].plot(df_epoch['start_time'], df_epoch['avm'], color='black')
     ax[0].set_ylim(0, )
 
     wrist_data = [intensity_dict[row.intensity] for row in df_epoch.itertuples()]
-    ax[1].plot(df_epoch['Timestamp'], wrist_data, color='black')
+    ax[1].plot(df_epoch['start_time'], wrist_data, color='black')
 
     for row in df_sleep.itertuples():
         ax[1].axvspan(xmin=row.start_time, xmax=row.end_time, ymin=0, ymax=.5, color='purple', alpha=.25)
@@ -638,7 +676,7 @@ def plot_activity(df_epoch, df_sleep, ankle_nw, wrist_nw):
     ax[1].set_yticks([0, 1, 2])
     ax[1].set_yticklabels(['sed', 'light', 'mod'])
 
-    ax[2].plot(df_epoch['Timestamp'], df_epoch['cadence'], color='black')
+    ax[2].plot(df_epoch['start_time'], df_epoch['cadence'], color='black')
     for row in ankle_nw.itertuples():
         ax[2].axvspan(xmin=row.start_time, xmax=row.end_time, ymin=0, ymax=.5, color='darkgrey', alpha=.75)
     ax[2].set_ylim(0, )

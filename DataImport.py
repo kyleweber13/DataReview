@@ -7,7 +7,7 @@ import msoffcrypto
 import io
 
 
-def import_data(file_dict, subj, visit_num, site_code='SBH', load_raw=True):
+def import_data(file_dict, subj, visit_num, site_code='SBH', study_code='OND09', load_raw=True):
 
     print("\nImporting and formatting summary dataframes...")
 
@@ -18,8 +18,8 @@ def import_data(file_dict, subj, visit_num, site_code='SBH', load_raw=True):
     # List of days in collection period
     dates = []
 
-    start_time = pyedflib.EdfReader(file_dict['edf_folder'] + edfs[0]).getStartdatetime()
-    file_dur = pyedflib.EdfReader(file_dict['edf_folder'] + edfs[0]).file_duration
+    # start_time = pyedflib.EdfReader(file_dict['edf_folder'] + edfs[0]).getStartdatetime()
+    # file_dur = pyedflib.EdfReader(file_dict['edf_folder'] + edfs[0]).file_duration
 
     # Epoched wrist data -------------------------------------------------------
     df_epoch = pd.DataFrame(columns=['Timestamp', 'avm', 'Day'])
@@ -28,16 +28,25 @@ def import_data(file_dict, subj, visit_num, site_code='SBH', load_raw=True):
         epoch_fname = file_dict['epoch_file']
 
         df_epoch = pd.read_csv(epoch_fname)
-        epoch_len = int(file_dur / df_epoch.shape[0])
-        df_epoch["Timestamp"] = pd.date_range(start=start_time, freq=f"{epoch_len}S", periods=df_epoch.shape[0])
-        df_epoch = df_epoch[["Timestamp", "avm"]]
+        # epoch_len = int(file_dur / df_epoch.shape[0])
 
-        for day in set([i.date() for i in df_epoch['Timestamp']]):
+        df_epoch['start_time'] = pd.to_datetime(df_epoch['start_time'])
+        df_epoch['end_time'] = pd.to_datetime(df_epoch['end_time'])
+
+        epoch_len = (df_epoch.iloc[0]['end_time'] - df_epoch.iloc[0]['start_time']).total_seconds()
+        # df_epoch["Timestamp"] = pd.date_range(start=start_time, freq=f"{epoch_len}S", periods=df_epoch.shape[0])
+        # df_epoch = df_epoch[["Timestamp", "avm"]]
+
+        df_epoch = df_epoch.loc[df_epoch['device_location'] == file_dict['wrist_file'].split(".edf")[0].split("_")[-1]]
+        df_epoch.reset_index(drop=True, inplace=True)
+
+        for day in set([i.date() for i in df_epoch['start_time']]):
             dates.append(day)
     except (FileNotFoundError, AttributeError, KeyError, ValueError):
+        epoch_len = 1
         pass
 
-    df_epoch["Day"] = [row.Timestamp.date() for row in df_epoch.itertuples()]
+    df_epoch["Day"] = [row.start_time.date() for row in df_epoch.itertuples()]
 
     print(f"Epoch filename: {epoch_fname}")
 
@@ -60,29 +69,25 @@ def import_data(file_dict, subj, visit_num, site_code='SBH', load_raw=True):
     print(f"Posture filename: {posture_fname}")
 
     # Sleep data (algorithm output)
-    df_sleep_alg = pd.DataFrame(columns=['study_code', 'subject_id', 'coll_id', 'sleep_bout_num', 'sptw_num',
-                                         'bout_detect', 'start_time', 'end_time'])
+    df_sptw = pd.DataFrame(columns=['study_code', 'subject_id', 'coll_id', 'sleep_bout_num', 'sptw_num',
+                                    'bout_detect', 'start_time', 'end_time'])
 
     try:
-        df_sleep_alg = pd.read_csv(file_dict['sleep_output_file'])
-        df_sleep_alg["start_time"] = pd.to_datetime(df_sleep_alg["start_time"])
-        df_sleep_alg["end_time"] = pd.to_datetime(df_sleep_alg["end_time"])
+        df_sptw = pd.read_csv(file_dict['sptw_file'])
+        df_sptw["start_time"] = pd.to_datetime(df_sptw["start_time"])
+        df_sptw["end_time"] = pd.to_datetime(df_sptw["end_time"])
     except (FileNotFoundError, AttributeError, KeyError):
         pass
 
-    # Sleep data - summaries
-    df_sleep = pd.DataFrame(columns=['Sleep', 'Date', 'TST (h)', 'Time to Bed', 'Time Out of Bed',
-                                     'Night TST (h)', 'Num Walks'])
+    # Sleep data - bouts ---------------------------------------------------
+    df_sleep = pd.DataFrame(columns=['study_code', 'subject_id', 'coll_id', 'sleep_bout_num', 'sptw_num',
+                                     'bout_detect', 'start_time', 'end_time', 'overnight'])
 
     try:
-        df_sleep = pd.read_excel(file_dict['sleep_summary_file'], sheet_name=f"{subj} Summary Dataframes")
-        df_sleep = df_sleep.iloc[df_sleep.loc[df_sleep["Sedentary"] == "Sleep"].index[0]:]
-        df_sleep.columns = df_sleep.iloc[0]
-        df_sleep = df_sleep.iloc[1:]
-        df_sleep = df_sleep.dropna()
-        df_sleep["Date"] = pd.to_datetime(df_sleep["Date"])
-        df_sleep["Date"] = [i.date() for i in df_sleep["Date"]]
-    except (FileNotFoundError, AttributeError, KeyError, ValueError):
+        df_sleep = pd.read_csv(file_dict['sleep_bout_file'])
+        df_sleep["start_time"] = pd.to_datetime(df_sleep["start_time"])
+        df_sleep["end_time"] = pd.to_datetime(df_sleep["end_time"])
+    except (FileNotFoundError, AttributeError, KeyError):
         pass
 
     # Activity descriptive data by day
@@ -148,9 +153,9 @@ def import_data(file_dict, subj, visit_num, site_code='SBH', load_raw=True):
     # Gait bout data
     df_gait = pd.DataFrame(columns=['start_timestamp', 'end_timestamp', 'step_count', 'duration', 'cadence', 'SpeedEst'])
 
-    gait_file = file_dict['gait_file'].format("", subj, visit_num)
+    gait_file = file_dict['gait_file'].format(study_code, "", subj, visit_num)
     if not os.path.exists(gait_file):
-        gait_file = file_dict['gait_file'].format(site_code, subj, visit_num)
+        gait_file = file_dict['gait_file'].format(study_code, site_code, subj, visit_num)
 
     try:
         df_gait = pd.read_csv(gait_file)
@@ -172,9 +177,9 @@ def import_data(file_dict, subj, visit_num, site_code='SBH', load_raw=True):
     df_steps = pd.DataFrame(columns=['study_code', 'subject_id', 'coll_id', 'step_num', 'gait_bout_num',
                                      'step_idx', 'step_time'])
 
-    steps_file = file_dict['steps_file'].format("", subj, visit_num)
+    steps_file = file_dict['steps_file'].format(study_code, "", subj, visit_num)
     if not os.path.exists(steps_file):
-        steps_file = file_dict['steps_file'].format(site_code, subj, visit_num)
+        steps_file = file_dict['steps_file'].format(study_code, site_code, subj, visit_num)
 
     try:
         df_steps = pd.read_csv(steps_file)
@@ -252,33 +257,38 @@ def import_data(file_dict, subj, visit_num, site_code='SBH', load_raw=True):
         ankle.import_edf(file_path=file_dict['ankle_file'], quiet=False)
 
         try:
-            ankle.ts = pd.date_range(start=ankle.header["start_datetime"], periods=len(ankle.signals[0]),
-                                     freq="{}ms".format(1000 / ankle.signal_headers[0]["sample_rate"]))
+            ankle.ts = pd.date_range(start=ankle.header["start_datetime"],
+                                     periods=len(ankle.signals[0]),
+                                     freq=f"{1000 / ankle.signal_headers[0]['sample_rate']:.6f}ms")
             ankle.temp_ts = pd.date_range(start=ankle.header["start_datetime"],
                                           periods=len(ankle.signals[ankle.get_signal_index('Temperature')]),
                                           freq="{}ms".format(1000 / ankle.signal_headers[ankle.get_signal_index('Temperature')]["sample_rate"]))
         except KeyError:
-            ankle.ts = pd.date_range(start=ankle.header["startdate"], periods=len(ankle.signals[0]),
+            ankle.ts = pd.date_range(start=ankle.header["startdate"],
+                                     periods=len(ankle.signals[0]),
                                      freq="{}ms".format(1000 / ankle.signal_headers[0]["sample_rate"]))
             ankle.temp_ts = pd.date_range(start=ankle.header["startdate"],
                                           periods=len(ankle.signals[ankle.get_signal_index('Temperature')]),
-                                          freq="{}ms".format(1000 / ankle.signal_headers[ankle.get_signal_index('Temperature')]["sample_rate"]))
+                                          freq=f"{1000 / ankle.signal_headers[ankle.get_signal_index('Temperature')]['sample_rate']:.6f}ms")
 
         print("\nImporting wrist data...")
         wrist = nimbalwear.Device()
         wrist.import_edf(file_path=file_dict['wrist_file'], quiet=False)
 
         try:
-            wrist.ts = pd.date_range(start=wrist.header["start_datetime"], periods=len(wrist.signals[0]),
-                                     freq="{}ms".format(1000 / wrist.signal_headers[0]["sample_rate"]))
+            wrist.ts = pd.date_range(start=wrist.header["start_datetime"],
+                                     periods=len(wrist.signals[0]),
+                                     freq=f"{1000 / wrist.signal_headers[0]['sample_rate']:.6f}ms")
             wrist.temp_ts = pd.date_range(start=wrist.header["start_datetime"],
                                           periods=len(wrist.signals[wrist.get_signal_index('Temperature')]),
-                                          freq="{}ms".format(1000 / wrist.signal_headers[wrist.get_signal_index('Temperature')]["sample_rate"]))
+                                          freq=f"{1000 / wrist.signal_headers[wrist.get_signal_index('Temperature')]['sample_rate']:.6f}ms")
         except KeyError:
-            wrist.ts = pd.date_range(start=wrist.header["startdate"], periods=len(wrist.signals[0]),
-                                     freq="{}ms".format(1000 / wrist.signal_headers[0]["sample_rate"]))
-            wrist.temp_ts = pd.date_range(start=wrist.header["startdate"], periods=len(wrist.signals[wrist.get_signal_index('Temperature')]),
-                                     freq="{}ms".format(1000 / wrist.signal_headers[wrist.get_signal_index('Temperature')]["sample_rate"]))
+            wrist.ts = pd.date_range(start=wrist.header["startdate"],
+                                     periods=len(wrist.signals[0]),
+                                     freq=f"{1000 / wrist.signal_headers[0]['sample_rate']:.6f}ms")
+            wrist.temp_ts = pd.date_range(start=wrist.header["startdate"],
+                                          periods=len(wrist.signals[wrist.get_signal_index('Temperature')]),
+                                          freq=f"{1000 / wrist.signal_headers[wrist.get_signal_index('Temperature')]['sample_rate']:.6f}ms")
 
     if not load_raw:
         ankle = None
@@ -286,7 +296,7 @@ def import_data(file_dict, subj, visit_num, site_code='SBH', load_raw=True):
 
     print("Data imported.")
 
-    return df_epoch, epoch_len, df_clin, df_posture, df_act, df_sleep_alg, df_sleep, df_gait, df_steps, \
+    return df_epoch, epoch_len, df_clin, df_posture, df_act, df_sptw, df_sleep, df_gait, df_steps, \
            df_act_log, df_ankle_nw, df_wrist_nw, df_ankle_sync, df_chest_sync, ankle, wrist
 
 
@@ -325,47 +335,27 @@ def find_summary_df(subj, data_review_df_folder="W:/OND09 (HANDDS-ONT)/Data Revi
     print("\nSUMMARY FILE NOT FOUND")
 
 
-def check_filenames(subj, file_dict, visit_num, site_code='SBH',
+def check_filenames(subj, file_dict, visit_num, study_code='OND09', site_code='SBH', imu_code='AXV6',
                     nw_bouts_folder="W:/NiMBaLWEAR/OND09/analytics/nonwear/bouts_standard/",
                     data_review_df_folder="W:/OND09 (HANDDS-ONT)/Data Review/"):
 
     """ANKLE NON-WEAR FILE"""
-    ankle_nw_file = f"{nw_bouts_folder}OND09_{subj}_{visit_num}_AXV6_RAnkle_NONWEAR.csv"
+    ankle_nw_file = f"{nw_bouts_folder}{study_code}_{subj}_{visit_num}_{imu_code}_RAnkle_NONWEAR.csv"
     if not os.path.exists(ankle_nw_file):
-        ankle_nw_file = f"{nw_bouts_folder}OND09_{site_code}{subj}_{visit_num}_AXV6_RAnkle_NONWEAR.csv"
+        ankle_nw_file = f"{nw_bouts_folder}{study_code}_{site_code}{subj}_{visit_num}_{imu_code}_RAnkle_NONWEAR.csv"
     if not os.path.exists(ankle_nw_file):
-        ankle_nw_file = f"{nw_bouts_folder}OND09_{subj}_{visit_num}_AXV6_LAnkle_NONWEAR.csv"
+        ankle_nw_file = f"{nw_bouts_folder}{study_code}_{subj}_{visit_num}_{imu_code}_LAnkle_NONWEAR.csv"
     if not os.path.exists(ankle_nw_file):
-        ankle_nw_file = f"{nw_bouts_folder}OND09_{site_code}{subj}_{visit_num}_AXV6_LAnkle_NONWEAR.csv"
+        ankle_nw_file = f"{nw_bouts_folder}{study_code}_{site_code}{subj}_{visit_num}_{imu_code}_LAnkle_NONWEAR.csv"
 
     """WRIST NON-WEAR FILE"""
-    wrist_nw_file = f"{nw_bouts_folder}OND09_{subj}_{visit_num}_AXV6_RWrist_NONWEAR.csv"
+    wrist_nw_file = f"{nw_bouts_folder}{study_code}_{subj}_{visit_num}_{imu_code}_RWrist_NONWEAR.csv"
     if not os.path.exists(wrist_nw_file):
-        wrist_nw_file = f"{nw_bouts_folder}OND09_{site_code}{subj}_{visit_num}_AXV6_RWrist_NONWEAR.csv"
+        wrist_nw_file = f"{nw_bouts_folder}{study_code}_{site_code}{subj}_{visit_num}_{imu_code}_RWrist_NONWEAR.csv"
     if not os.path.exists(wrist_nw_file):
-        wrist_nw_file = f"{nw_bouts_folder}OND09_{subj}_{visit_num}_AXV6_LWrist_NONWEAR.csv"
+        wrist_nw_file = f"{nw_bouts_folder}{study_code}_{subj}_{visit_num}_{imu_code}_LWrist_NONWEAR.csv"
     if not os.path.exists(wrist_nw_file):
-        wrist_nw_file = f"{nw_bouts_folder}OND09_{site_code}{subj}_{visit_num}_AXV6_LWrist_NONWEAR.csv"
-
-    """
-    # ANKLE IMU FILE
-    ankle_file = "{}OND09_{}_{}_AXV6_RAnkle.edf".format(file_dict['edf_folder'], subj, visit_num)
-    if not os.path.exists(ankle_file):
-        ankle_file = "{}OND09_{}{}_{}_AXV6_RAnkle.edf".format(file_dict['edf_folder'], site_code, subj, visit_num)
-    if not os.path.exists(ankle_file):
-        ankle_file = "{}OND09_{}_{}_AXV6_LAnkle.edf".format(file_dict['edf_folder'], subj, visit_num)
-    if not os.path.exists(ankle_file):
-        ankle_file = "{}OND09_{}{}_{}_AXV6_LAnkle.edf".format(file_dict['edf_folder'], site_code, subj, visit_num)
-
-    # WRIST IMU FILE
-    wrist_file = "{}OND09_{}_{}_AXV6_RWrist.edf".format(file_dict['edf_folder'], subj, visit_num)
-    if not os.path.exists(wrist_file):
-        wrist_file = "{}OND09_{}{}_{}_AXV6_RWrist.edf".format(file_dict['edf_folder'], site_code, subj, visit_num)
-    if not os.path.exists(wrist_file):
-        wrist_file = "{}OND09_{}_{}_AXV6_LWrist.edf".format(file_dict['edf_folder'], subj, visit_num)
-    if not os.path.exists(wrist_file):
-        wrist_file = "{}OND09_{}{}_{}_AXV6_LWrist.edf".format(file_dict['edf_folder'], site_code, subj, visit_num)
-    """
+        wrist_nw_file = f"{nw_bouts_folder}{study_code}_{site_code}{subj}_{visit_num}_{imu_code}_LWrist_NONWEAR.csv"
 
     devices_csv = pd.read_csv(file_dict['devices'])
     devices_csv_subj = devices_csv.loc[devices_csv['subject_id'] == subj]
